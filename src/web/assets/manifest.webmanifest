@@ -1,0 +1,19 @@
+{
+  "name": "Kewarasan",
+  "short_name": "Kewarasan",
+  "description": "Mood tracker — emosi itu riak, mood itu arus.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1117",
+  "theme_color": "#0f1117",
+  "orientation": "portrait",
+  "lang": "id",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

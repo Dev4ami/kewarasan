@@ -7,8 +7,8 @@ use crate::config::OWNER_ID;
 use crate::db::queries::{self, DayAgg, HeatCell, TagAgg};
 use axum::{
     extract::{Query, State},
-    http::StatusCode,
-    response::Html,
+    http::{header, StatusCode},
+    response::{Html, IntoResponse},
     routing::get,
     Json, Router,
 };
@@ -17,19 +17,42 @@ use chrono_tz::Tz;
 use serde::Deserialize;
 use sqlx::PgPool;
 
-/// Router web: halaman dashboard + 3 endpoint agregasi.
+/// Router web: halaman dashboard + 3 endpoint agregasi + icon & manifest PWA.
 pub fn router(pool: PgPool) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/api/trend", get(api_trend))
         .route("/api/tags", get(api_tags))
         .route("/api/heatmap", get(api_heatmap))
+        .route("/icon.png", get(icon))
+        .route("/apple-touch-icon.png", get(icon))
+        .route("/favicon.ico", get(icon))
+        .route("/manifest.webmanifest", get(manifest))
         .with_state(pool)
 }
 
 /// HTML di-embed ke binary (include_str!) — gak perlu copy file saat Docker.
 async fn index() -> Html<&'static str> {
     Html(include_str!("templates/index.html"))
+}
+
+/// Icon PNG untuk favicon, apple-touch-icon, dan manifest PWA — embed 512×512.
+async fn icon() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, "public, max-age=604800"),
+        ],
+        &include_bytes!("assets/kewarasan.png")[..],
+    )
+}
+
+/// Web App Manifest — bikin "Add to Home Screen" muncul dengan nama & icon.
+async fn manifest() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "application/manifest+json")],
+        include_str!("assets/manifest.webmanifest"),
+    )
 }
 
 #[derive(Deserialize)]
