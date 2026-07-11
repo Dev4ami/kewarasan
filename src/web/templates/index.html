@@ -23,8 +23,16 @@
     font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   }
   .wrap { max-width: 900px; margin: 0 auto; padding: 24px 18px 60px; }
-  header h1 { margin: 0 0 2px; font-size: 22px; }
-  header p { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  header .title h1 { margin: 0 0 2px; font-size: 22px; }
+  header .title p { margin: 0; color: var(--muted); font-size: 14px; }
+  header form { margin: 0; }
+  header button.logout {
+    background: transparent; color: var(--muted); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 12px; cursor: pointer; font: inherit; font-size: 13px;
+  }
+  header button.logout:hover { color: var(--fg); border-color: var(--muted); }
+  header button.logout:active { transform: translateY(1px); }
   .filter {
     display: flex; flex-wrap: wrap; gap: 10px; align-items: end;
     background: var(--card); border: 1px solid var(--line);
@@ -86,8 +94,13 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>🧠 Kewarasan</h1>
-    <p>Emosi itu riak, mood itu arus — ini arusmu.</p>
+    <div class="title">
+      <h1>🧠 Kewarasan</h1>
+      <p>Emosi itu riak, mood itu arus — ini arusmu.</p>
+    </div>
+    <form method="post" action="/logout">
+      <button type="submit" class="logout">Keluar</button>
+    </form>
   </header>
 
   <div class="filter">

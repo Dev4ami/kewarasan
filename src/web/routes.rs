@@ -1,15 +1,18 @@
 // Router web + endpoint JSON buat dashboard Chart.js.
 // Read-only, owner-scoped: default user = config::OWNER_ID, override `?user=<id>`.
 // Rentang tanggal `?from=YYYY-MM-DD&to=YYYY-MM-DD` (default 30 hari terakhir).
-// Tanpa auth (MVP self-hosted) — lihat catatan di CLAUDE.md/roadmap.
+// Auth optional (cookie session) — lihat web/auth.rs.
 
 use crate::config::OWNER_ID;
 use crate::db::queries::{self, DayAgg, HeatCell, TagAgg};
+use crate::web::auth;
+use crate::web::AppState;
 use axum::{
-    extract::{Query, State},
+    extract::{FromRef, Query, State},
     http::{header, StatusCode},
+    middleware,
     response::{Html, IntoResponse},
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
@@ -17,18 +20,37 @@ use chrono_tz::Tz;
 use serde::Deserialize;
 use sqlx::PgPool;
 
-/// Router web: halaman dashboard + 3 endpoint agregasi + icon & manifest PWA.
-pub fn router(pool: PgPool) -> Router {
-    Router::new()
+impl FromRef<AppState> for PgPool {
+    fn from_ref(state: &AppState) -> Self {
+        state.pool.clone()
+    }
+}
+
+/// Router web: halaman dashboard + endpoint agregasi + PWA assets + login/logout.
+/// Kalau `state.auth = Some`, halaman & API di-guard cookie session.
+pub fn router(state: AppState) -> Router {
+    let mut protected = Router::new()
         .route("/", get(index))
         .route("/api/trend", get(api_trend))
         .route("/api/tags", get(api_tags))
         .route("/api/heatmap", get(api_heatmap))
+        .route("/logout", post(auth::logout));
+
+    if let Some(a) = &state.auth {
+        let mw = auth::require(a.sessions.clone());
+        protected = protected.layer(middleware::from_fn(mw));
+    }
+
+    protected
+        .route(
+            "/login",
+            get(auth::login_page).post(auth::login_submit),
+        )
         .route("/icon.png", get(icon))
         .route("/apple-touch-icon.png", get(icon))
         .route("/favicon.ico", get(icon))
         .route("/manifest.webmanifest", get(manifest))
-        .with_state(pool)
+        .with_state(state)
 }
 
 /// HTML di-embed ke binary (include_str!) — gak perlu copy file saat Docker.
