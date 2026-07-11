@@ -3,7 +3,8 @@ use crate::bot::{
     keyboards,
 };
 use crate::db::{models::EntryType, queries};
-use chrono::NaiveTime;
+use chrono::{Duration, NaiveTime, TimeZone, Utc};
+use chrono_tz::Tz;
 use sqlx::PgPool;
 use teloxide::{
     prelude::*,
@@ -92,11 +93,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, pool: PgPool) -> a
             .await?;
         }
         Command::Stats => {
-            bot.send_message(
-                msg.chat.id,
-                "Polamu belum kebaca — ceritanya masih ngumpul. Kasih aku waktu ya 📊",
-            )
-            .await?;
+            handle_stats(&bot, &msg, &pool).await?;
         }
         Command::Jadwal(arg) => {
             handle_jadwal(&bot, &msg, &pool, &arg).await?;
@@ -166,6 +163,87 @@ async fn handle_callback(bot: Bot, q: CallbackQuery, pool: PgPool) -> anyhow::Re
 
     bot.answer_callback_query(cq_id).await?;
     Ok(())
+}
+
+/// /stats — ringkasan mood 7 hari terakhir: rata-rata, jumlah check-in,
+/// sparkline harian, dan tag yang paling sering nempel.
+async fn handle_stats(bot: &Bot, msg: &Message, pool: &PgPool) -> anyhow::Result<()> {
+    let user = queries::ensure_user(pool, msg.chat.id.0).await?;
+    let tz: Tz = user.timezone.parse().unwrap_or(chrono_tz::Asia::Jakarta);
+
+    // Jendela 7 hari: dari awal hari (today-6) lokal user → batas bawah UTC.
+    let today = Utc::now().with_timezone(&tz).date_naive();
+    let start_day = today - Duration::days(6);
+    let start_local = start_day.and_hms_opt(0, 0, 0).unwrap();
+    let since = tz
+        .from_local_datetime(&start_local)
+        .earliest()
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(|| Utc::now() - Duration::days(7));
+
+    let daily = queries::weekly_daily(pool, user.id, &user.timezone, since).await?;
+
+    // Isi 7 slot: hari tanpa entry jadi '·' (gap), bukan bar rendah (biar nggak
+    // kebaca sebagai mood 1).
+    let mut bars = String::with_capacity(7 * 3);
+    let mut total_n: i64 = 0;
+    let mut weighted: f64 = 0.0;
+    for i in 0..7 {
+        let day = start_day + Duration::days(i);
+        match daily.iter().find(|d| d.day == day) {
+            Some(d) => {
+                bars.push(bar(d.avg));
+                total_n += d.n;
+                weighted += d.avg * d.n as f64;
+            }
+            None => bars.push('·'),
+        }
+    }
+
+    if total_n == 0 {
+        bot.send_message(
+            msg.chat.id,
+            "Minggu ini masih kosong 🫙\nCatat dulu yuk — /waras — biar ada arus yang bisa kubaca 📊",
+        )
+        .await?;
+        return Ok(());
+    }
+
+    let avg = weighted / total_n as f64;
+    let emoji = keyboards::mood_emoji(avg.round() as i16);
+
+    let mut text = format!(
+        "📊 <b>Kewarasan kamu</b> · seminggu terakhir\n\n\
+         Rata-rata <b>{avg:.1}</b>/5 {emoji} · <b>{total_n}</b> check-in\n\n\
+         <code>{bars}</code>\n\
+         <i>← 7 hari lalu · hari ini →</i>",
+    );
+
+    let tags = queries::weekly_tags(pool, user.id, since).await?;
+    if !tags.is_empty() {
+        text.push_str("\n\n<b>Paling sering nongol:</b>");
+        for t in &tags {
+            let te = keyboards::mood_emoji(t.avg.round() as i16);
+            text.push_str(&format!(
+                "\n• {} · {}× (rata {:.1} {te})",
+                html_escape(&t.name),
+                t.n,
+                t.avg,
+            ));
+        }
+    }
+
+    bot.send_message(msg.chat.id, text)
+        .parse_mode(ParseMode::Html)
+        .await?;
+    Ok(())
+}
+
+/// Petakan rata-rata mood (1–5) ke satu bar sparkline.
+fn bar(avg: f64) -> char {
+    const BARS: [char; 5] = ['▁', '▂', '▄', '▅', '▇'];
+    let idx = (avg.round() as i64).clamp(1, 5) - 1;
+    BARS[idx as usize]
 }
 
 /// /jadwal — tanpa arg = lihat daftar; `09:00` = tambah; `hapus 09:00` = hapus.

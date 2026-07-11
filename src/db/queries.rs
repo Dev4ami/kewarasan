@@ -2,7 +2,7 @@
 // dengan offline cache (.sqlx) supaya Docker build tidak butuh DB hidup.
 
 use crate::db::models::{EntryType, Tag, User};
-use chrono::NaiveTime;
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc};
 use sqlx::PgPool;
 
 /// Cari user by telegram_id, bikin kalau belum ada. Selalu balikin row-nya.
@@ -165,4 +165,77 @@ pub async fn list_schedules(pool: &PgPool, user_id: i64) -> anyhow::Result<Vec<N
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(|r| r.local_time).collect())
+}
+
+// ============================================================
+// Statistik (/stats)
+// ============================================================
+
+/// Rata-rata mood + jumlah check-in untuk satu hari (lokal user).
+pub struct DayAgg {
+    pub day: NaiveDate,
+    pub avg: f64,
+    pub n: i64,
+}
+
+/// Agregasi mood per hari sejak `since` (UTC), di-bucket pakai timezone user.
+/// Hanya hari yang ada entry yang muncul — pengisian slot kosong dilakukan di
+/// pemanggil (biar sparkline selalu 7 kolom).
+pub async fn weekly_daily(
+    pool: &PgPool,
+    user_id: i64,
+    tz: &str,
+    since: DateTime<Utc>,
+) -> anyhow::Result<Vec<DayAgg>> {
+    let rows = sqlx::query_as!(
+        DayAgg,
+        r#"SELECT (created_at AT TIME ZONE $2::text)::date AS "day!",
+                  AVG(score)::float8               AS "avg!",
+                  COUNT(*)                         AS "n!"
+           FROM mood_entries
+           WHERE user_id = $1 AND created_at >= $3
+           GROUP BY 1
+           ORDER BY 1"#,
+        user_id,
+        tz,
+        since
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Rata-rata mood per tag dalam satu rentang (tag yang paling sering muncul).
+pub struct TagAgg {
+    pub name: String,
+    pub n: i64,
+    pub avg: f64,
+}
+
+/// Tag paling sering nempel di entry sejak `since` (UTC), top 5.
+/// Sengaja tanpa `HAVING COUNT >= 5` (itu buat korelasi dashboard) — di rentang
+/// mingguan sampel kecil itu wajar, di sini kita cuma nunjukin "sering muncul".
+pub async fn weekly_tags(
+    pool: &PgPool,
+    user_id: i64,
+    since: DateTime<Utc>,
+) -> anyhow::Result<Vec<TagAgg>> {
+    let rows = sqlx::query_as!(
+        TagAgg,
+        r#"SELECT t.name           AS "name!",
+                  COUNT(*)         AS "n!",
+                  AVG(m.score)::float8 AS "avg!"
+           FROM entry_tags et
+           JOIN mood_entries m ON m.id = et.entry_id
+           JOIN tags t         ON t.id = et.tag_id
+           WHERE m.user_id = $1 AND m.created_at >= $2
+           GROUP BY t.name
+           ORDER BY COUNT(*) DESC, t.name
+           LIMIT 5"#,
+        user_id,
+        since
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
 }

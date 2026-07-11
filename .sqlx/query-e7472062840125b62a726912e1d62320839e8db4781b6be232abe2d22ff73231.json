@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT t.name           AS \"name!\",\n                  COUNT(*)         AS \"n!\",\n                  AVG(m.score)::float8 AS \"avg!\"\n           FROM entry_tags et\n           JOIN mood_entries m ON m.id = et.entry_id\n           JOIN tags t         ON t.id = et.tag_id\n           WHERE m.user_id = $1 AND m.created_at >= $2\n           GROUP BY t.name\n           ORDER BY COUNT(*) DESC, t.name\n           LIMIT 5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "name!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "n!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "avg!",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "e7472062840125b62a726912e1d62320839e8db4781b6be232abe2d22ff73231"
+}
