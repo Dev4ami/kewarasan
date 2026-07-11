@@ -1,0 +1,15 @@
+# Rust
+/target
+# Cargo.lock TIDAK di-ignore — project binary sebaiknya commit lockfile
+
+# Environment — jangan pernah commit token & password!
+.env
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
