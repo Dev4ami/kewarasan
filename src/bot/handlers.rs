@@ -50,7 +50,8 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, pool: PgPool) -> a
         Command::Start => {
             // Chat privat: chat.id == telegram user id.
             let telegram_id = msg.chat.id.0;
-            queries::ensure_user(&pool, telegram_id).await?;
+            let (_, just_onboarded) =
+                queries::onboard_user(&pool, telegram_id, &default_schedule_times()).await?;
 
             let nama = msg
                 .from
@@ -63,7 +64,7 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, pool: PgPool) -> a
                 nama
             };
 
-            let text = format!(
+            let mut text = format!(
                 "Halo, <b>{sapaan}</b> 👋🧠\n\n\
                  ID kamu: <code>{telegram_id}</code>\n\n\
                  Tugasku simpel: sesekali nanya kabar batinmu, kamu cukup tap emoji. \
@@ -72,6 +73,12 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, pool: PgPool) -> a
                  /jadwal — atur biar aku yang nyapa duluan",
                 sapaan = html_escape(&sapaan),
             );
+            if just_onboarded {
+                text.push_str(
+                    "\n\n⏰ Aku pasangin jadwal check-in default: <b>09:00 · 15:00 · 21:00</b>. \
+                     Ganti atau hapus lewat /jadwal.",
+                );
+            }
             bot.send_message(msg.chat.id, text)
                 .parse_mode(ParseMode::Html)
                 .await?;
@@ -237,6 +244,14 @@ async fn handle_jadwal(bot: &Bot, msg: &Message, pool: &PgPool, arg: &str) -> an
 
 fn parse_time(s: &str) -> Option<NaiveTime> {
     NaiveTime::parse_from_str(s, "%H:%M").ok()
+}
+
+/// Jadwal check-in default buat user baru: pagi, sore, malam.
+fn default_schedule_times() -> Vec<NaiveTime> {
+    [9, 15, 21]
+        .iter()
+        .filter_map(|h| NaiveTime::from_hms_opt(*h, 0, 0))
+        .collect()
 }
 
 /// Ambil (chat_id, message_id) dari pesan callback, apa pun variannya.

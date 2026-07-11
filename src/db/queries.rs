@@ -19,6 +19,33 @@ pub async fn ensure_user(pool: &PgPool, telegram_id: i64) -> anyhow::Result<User
     Ok(user)
 }
 
+/// Seperti [`ensure_user`], tapi kalau user baru pertama kali onboarding,
+/// pasang `default_times` sebagai jadwal check-in — SEKALI saja (ditandai
+/// kolom `onboarded_at`). Balikin (user, true) kalau baru saja di-onboard.
+pub async fn onboard_user(
+    pool: &PgPool,
+    telegram_id: i64,
+    default_times: &[NaiveTime],
+) -> anyhow::Result<(User, bool)> {
+    let user = ensure_user(pool, telegram_id).await?;
+
+    let row = sqlx::query!("SELECT onboarded_at FROM users WHERE id = $1", user.id)
+        .fetch_one(pool)
+        .await?;
+    let just_onboarded = row.onboarded_at.is_none();
+
+    if just_onboarded {
+        for t in default_times {
+            add_schedule(pool, user.id, *t).await?;
+        }
+        sqlx::query!("UPDATE users SET onboarded_at = now() WHERE id = $1", user.id)
+            .execute(pool)
+            .await?;
+    }
+
+    Ok((user, just_onboarded))
+}
+
 /// Tag bawaan sistem (user_id NULL) + tag milik user, urut by id.
 pub async fn list_tags(pool: &PgPool, user_id: i64) -> anyhow::Result<Vec<Tag>> {
     let tags = sqlx::query_as!(
