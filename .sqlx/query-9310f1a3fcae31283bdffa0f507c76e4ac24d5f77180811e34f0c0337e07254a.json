@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, user_id, name FROM tags\n           WHERE user_id IS NULL OR user_id = $1\n           ORDER BY id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "9310f1a3fcae31283bdffa0f507c76e4ac24d5f77180811e34f0c0337e07254a"
+}

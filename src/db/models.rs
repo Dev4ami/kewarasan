@@ -25,6 +25,15 @@ pub enum EntryType {
     Spontaneous,
 }
 
+impl EntryType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EntryType::Scheduled => "scheduled",
+            EntryType::Spontaneous => "spontaneous",
+        }
+    }
+}
+
 #[derive(Debug, Clone, FromRow)]
 pub struct MoodEntry {
     pub id: i64,

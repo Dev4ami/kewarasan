@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO entry_tags (entry_id, tag_id)\n           SELECT $1, tid FROM UNNEST($2::bigint[]) AS t(tid)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3ed7392ed3556d42389b9b468dcda577e69e32577f54f861c2b9743fe043baab"
+}

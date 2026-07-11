@@ -5,6 +5,9 @@
 # Environment — jangan pernah commit token & password!
 .env
 
+# Log runtime dev (dari Start-Process saat tes lokal)
+*.log
+
 # Editor
 .vscode/
 .idea/

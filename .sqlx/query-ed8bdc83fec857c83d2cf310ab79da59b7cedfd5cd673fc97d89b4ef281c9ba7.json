@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO mood_entries (user_id, score, entry_type, note)\n           VALUES ($1, $2, $3::text::entry_type, $4)\n           RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int2",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ed8bdc83fec857c83d2cf310ab79da59b7cedfd5cd673fc97d89b4ef281c9ba7"
+}

@@ -1,2 +1,85 @@
-// Builder inline keyboard (emoji mood + toggle tags). Diisi di Step 3.
-// Skala mood 1-5: 😩 😕 😐 🙂 😄
+// Builder inline keyboard. Skala mood 1-5: 😩 😕 😐 🙂 😄
+// Callback STATELESS: state pilihan di-encode di callback data tiap tombol.
+
+use crate::db::models::Tag;
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
+
+/// (emoji, score) urut 1..5.
+pub const MOODS: [(&str, i16); 5] = [
+    ("😩", 1),
+    ("😕", 2),
+    ("😐", 3),
+    ("🙂", 4),
+    ("😄", 5),
+];
+
+pub fn mood_emoji(score: i16) -> &'static str {
+    MOODS
+        .iter()
+        .find(|(_, s)| *s == score)
+        .map(|(e, _)| *e)
+        .unwrap_or("❓")
+}
+
+/// Baris 5 emoji. Callback `m:<score>`.
+pub fn mood_keyboard() -> InlineKeyboardMarkup {
+    let row: Vec<InlineKeyboardButton> = MOODS
+        .iter()
+        .map(|(emoji, score)| {
+            InlineKeyboardButton::callback(emoji.to_string(), format!("m:{score}"))
+        })
+        .collect();
+    InlineKeyboardMarkup::new(vec![row])
+}
+
+/// Grid tag (3 per baris) + tombol Selesai.
+/// Tag terpilih diberi ✅. Callback tiap tag = state HASIL kalau tombol ditekan
+/// (toggle), format `m:<score>:t:<csv>`. Selesai = `ok:<score>:<csv>`.
+pub fn tags_keyboard(score: i16, selected: &[i64], all_tags: &[Tag]) -> InlineKeyboardMarkup {
+    let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
+
+    for chunk in all_tags.chunks(3) {
+        let row = chunk
+            .iter()
+            .map(|tag| {
+                let label = if selected.contains(&tag.id) {
+                    format!("✅ {}", tag.name)
+                } else {
+                    tag.name.clone()
+                };
+                InlineKeyboardButton::callback(
+                    label,
+                    format!("m:{score}:t:{}", toggle_csv(selected, tag.id)),
+                )
+            })
+            .collect();
+        rows.push(row);
+    }
+
+    rows.push(vec![InlineKeyboardButton::callback(
+        "✔️ Selesai".to_string(),
+        format!("ok:{score}:{}", csv(selected)),
+    )]);
+
+    InlineKeyboardMarkup::new(rows)
+}
+
+fn csv(ids: &[i64]) -> String {
+    ids.iter()
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// CSV hasil toggle `id` pada `selected` (sorted, biar stabil).
+fn toggle_csv(selected: &[i64], id: i64) -> String {
+    let mut v: Vec<i64> = if selected.contains(&id) {
+        selected.iter().copied().filter(|x| *x != id).collect()
+    } else {
+        let mut s = selected.to_vec();
+        s.push(id);
+        s
+    };
+    v.sort_unstable();
+    csv(&v)
+}

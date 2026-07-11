@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO users (telegram_id) VALUES ($1)\n           ON CONFLICT (telegram_id) DO UPDATE SET telegram_id = EXCLUDED.telegram_id\n           RETURNING id, telegram_id, timezone, created_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "telegram_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "timezone",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "833231d91a61104242fbba3d57f2c8d67018a51be100007d812a36571f1cf94a"
+}
