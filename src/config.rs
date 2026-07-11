@@ -10,6 +10,15 @@ pub struct Config {
     pub database_url: String,
     pub teloxide_token: String,
     pub web_port: u16,
+    /// Kredensial HTTP Basic Auth dashboard. `None` = akses terbuka
+    /// (biar dev lokal tanpa ribet). Set `DASHBOARD_PASSWORD` di prod.
+    pub dashboard_auth: Option<DashboardAuth>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DashboardAuth {
+    pub user: String,
+    pub password: String,
 }
 
 impl Config {
@@ -23,6 +32,13 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(3000),
+            dashboard_auth: std::env::var("DASHBOARD_PASSWORD").ok().map(|password| {
+                DashboardAuth {
+                    user: std::env::var("DASHBOARD_USER")
+                        .unwrap_or_else(|_| "kewarasan".to_string()),
+                    password,
+                }
+            }),
         })
     }
 }

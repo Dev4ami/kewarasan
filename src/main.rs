@@ -69,8 +69,9 @@ async fn async_main() -> Result<()> {
     // Task 3: web dashboard.
     let web_pool = pool.clone();
     let web_port = cfg.web_port;
+    let web_auth = cfg.dashboard_auth.clone();
     tokio::spawn(async move {
-        if let Err(e) = web::serve(web_pool, web_port).await {
+        if let Err(e) = web::serve(web_pool, web_port, web_auth).await {
             tracing::error!("web server mati: {e:?}");
         }
     });
