@@ -9,10 +9,8 @@ use teloxide::{prelude::*, utils::command::BotCommands};
 
 use handlers::Command;
 
-/// Bangun bot, daftarkan menu command, lalu jalankan dispatcher (long polling).
-pub async fn run(token: String, pool: PgPool) -> Result<()> {
-    let bot = Bot::new(token);
-
+/// Daftarkan menu command, lalu jalankan dispatcher (long polling).
+pub async fn run(bot: Bot, pool: PgPool) -> Result<()> {
     // Daftar menu command = nice-to-have. Kalau jaringan ke Telegram lagi ngadat,
     // jangan bikin bot mati — cukup warn, dispatcher tetap jalan (punya retry sendiri).
     if let Err(e) = bot.set_my_commands(Command::bot_commands()).await {

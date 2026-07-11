@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM checkin_schedules WHERE user_id = $1 AND local_time = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Time"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "51730779a11144c7683b7cea0b3ebfcd943869c79d4ce6eaf8e808b95301bbdc"
+}

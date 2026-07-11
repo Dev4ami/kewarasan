@@ -55,10 +55,13 @@ async fn async_main() -> Result<()> {
     info!("Menjalankan migrations…");
     sqlx::migrate!("./migrations").run(&pool).await?;
 
+    let bot = teloxide::Bot::new(cfg.teloxide_token);
+
     // Task 2: scheduler check-in.
+    let sched_bot = bot.clone();
     let sched_pool = pool.clone();
     tokio::spawn(async move {
-        if let Err(e) = bot::scheduler::run(sched_pool).await {
+        if let Err(e) = bot::scheduler::run(sched_bot, sched_pool).await {
             tracing::error!("scheduler mati: {e:?}");
         }
     });
@@ -74,7 +77,7 @@ async fn async_main() -> Result<()> {
 
     // Task 1: dispatcher bot (blocking — jalan sampai proses dimatikan).
     info!("Bot Kewarasan jalan 🧠");
-    bot::run(cfg.teloxide_token, pool).await?;
+    bot::run(bot, pool).await?;
 
     Ok(())
 }

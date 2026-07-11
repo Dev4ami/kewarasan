@@ -1,5 +1,5 @@
 // Builder inline keyboard. Skala mood 1-5: 😩 😕 😐 🙂 😄
-// Callback STATELESS: state pilihan di-encode di callback data tiap tombol.
+// Callback STATELESS: state pilihan + sumber (p/s) di-encode di callback data.
 
 use crate::db::models::Tag;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
@@ -21,21 +21,40 @@ pub fn mood_emoji(score: i16) -> &'static str {
         .unwrap_or("❓")
 }
 
-/// Baris 5 emoji. Callback `m:<score>`.
-pub fn mood_keyboard() -> InlineKeyboardMarkup {
-    let row: Vec<InlineKeyboardButton> = MOODS
-        .iter()
-        .map(|(emoji, score)| {
-            InlineKeyboardButton::callback(emoji.to_string(), format!("m:{score}"))
-        })
-        .collect();
-    InlineKeyboardMarkup::new(vec![row])
+/// Flag sumber di callback: scheduled=s, spontaneous=p.
+fn flag(scheduled: bool) -> &'static str {
+    if scheduled {
+        "s"
+    } else {
+        "p"
+    }
 }
 
-/// Grid tag (3 per baris) + tombol Selesai.
+/// Baris 5 emoji + baris Batal. Callback `m:<flag>:<score>`, batal = `x`.
+pub fn mood_keyboard(scheduled: bool) -> InlineKeyboardMarkup {
+    let f = flag(scheduled);
+    let emojis: Vec<InlineKeyboardButton> = MOODS
+        .iter()
+        .map(|(emoji, score)| {
+            InlineKeyboardButton::callback(emoji.to_string(), format!("m:{f}:{score}"))
+        })
+        .collect();
+    InlineKeyboardMarkup::new(vec![
+        emojis,
+        vec![InlineKeyboardButton::callback("✕ Batal".to_string(), "x".to_string())],
+    ])
+}
+
+/// Grid tag (3 per baris) + baris Selesai/Batal.
 /// Tag terpilih diberi ✅. Callback tiap tag = state HASIL kalau tombol ditekan
-/// (toggle), format `m:<score>:t:<csv>`. Selesai = `ok:<score>:<csv>`.
-pub fn tags_keyboard(score: i16, selected: &[i64], all_tags: &[Tag]) -> InlineKeyboardMarkup {
+/// (toggle), format `m:<flag>:<score>:t:<csv>`. Selesai = `ok:<flag>:<score>:<csv>`.
+pub fn tags_keyboard(
+    scheduled: bool,
+    score: i16,
+    selected: &[i64],
+    all_tags: &[Tag],
+) -> InlineKeyboardMarkup {
+    let f = flag(scheduled);
     let mut rows: Vec<Vec<InlineKeyboardButton>> = Vec::new();
 
     for chunk in all_tags.chunks(3) {
@@ -49,17 +68,20 @@ pub fn tags_keyboard(score: i16, selected: &[i64], all_tags: &[Tag]) -> InlineKe
                 };
                 InlineKeyboardButton::callback(
                     label,
-                    format!("m:{score}:t:{}", toggle_csv(selected, tag.id)),
+                    format!("m:{f}:{score}:t:{}", toggle_csv(selected, tag.id)),
                 )
             })
             .collect();
         rows.push(row);
     }
 
-    rows.push(vec![InlineKeyboardButton::callback(
-        "✔️ Selesai".to_string(),
-        format!("ok:{score}:{}", csv(selected)),
-    )]);
+    rows.push(vec![
+        InlineKeyboardButton::callback(
+            "✔️ Selesai".to_string(),
+            format!("ok:{f}:{score}:{}", csv(selected)),
+        ),
+        InlineKeyboardButton::callback("✕ Batal".to_string(), "x".to_string()),
+    ]);
 
     InlineKeyboardMarkup::new(rows)
 }

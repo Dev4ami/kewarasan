@@ -2,6 +2,7 @@
 // dengan offline cache (.sqlx) supaya Docker build tidak butuh DB hidup.
 
 use crate::db::models::{EntryType, Tag, User};
+use chrono::NaiveTime;
 use sqlx::PgPool;
 
 /// Cari user by telegram_id, bikin kalau belum ada. Selalu balikin row-nya.
@@ -68,4 +69,73 @@ pub async fn attach_tags(pool: &PgPool, entry_id: i64, tag_ids: &[i64]) -> anyho
     .execute(pool)
     .await?;
     Ok(())
+}
+
+// ============================================================
+// Jadwal check-in
+// ============================================================
+
+/// Satu jadwal aktif + data buat ngirim pesannya.
+pub struct DueCheckin {
+    pub telegram_id: i64,
+    pub timezone: String,
+    pub local_time: NaiveTime,
+}
+
+/// Semua jadwal aktif (dari semua user). Matching jam dilakukan di scheduler
+/// pakai timezone masing-masing user.
+pub async fn all_enabled_schedules(pool: &PgPool) -> anyhow::Result<Vec<DueCheckin>> {
+    let rows = sqlx::query_as!(
+        DueCheckin,
+        r#"SELECT u.telegram_id, u.timezone, s.local_time
+           FROM checkin_schedules s
+           JOIN users u ON u.id = s.user_id
+           WHERE s.enabled = true"#
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Tambah jadwal (idempotent: jam yang sama = di-enable ulang).
+pub async fn add_schedule(pool: &PgPool, user_id: i64, local_time: NaiveTime) -> anyhow::Result<()> {
+    sqlx::query!(
+        r#"INSERT INTO checkin_schedules (user_id, local_time, enabled)
+           VALUES ($1, $2, true)
+           ON CONFLICT (user_id, local_time) DO UPDATE SET enabled = true"#,
+        user_id,
+        local_time
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Hapus jadwal. Balikin true kalau ada yang kehapus.
+pub async fn remove_schedule(
+    pool: &PgPool,
+    user_id: i64,
+    local_time: NaiveTime,
+) -> anyhow::Result<bool> {
+    let r = sqlx::query!(
+        "DELETE FROM checkin_schedules WHERE user_id = $1 AND local_time = $2",
+        user_id,
+        local_time
+    )
+    .execute(pool)
+    .await?;
+    Ok(r.rows_affected() > 0)
+}
+
+/// Daftar jam jadwal aktif milik user, urut.
+pub async fn list_schedules(pool: &PgPool, user_id: i64) -> anyhow::Result<Vec<NaiveTime>> {
+    let rows = sqlx::query!(
+        r#"SELECT local_time FROM checkin_schedules
+           WHERE user_id = $1 AND enabled = true
+           ORDER BY local_time"#,
+        user_id
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| r.local_time).collect())
 }

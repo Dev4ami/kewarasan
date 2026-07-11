@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT local_time FROM checkin_schedules\n           WHERE user_id = $1 AND enabled = true\n           ORDER BY local_time",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "local_time",
+        "type_info": "Time"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "ce270fcb99ff723db675b35588af6c599094fc5724a24d27dfc502a09739dca6"
+}

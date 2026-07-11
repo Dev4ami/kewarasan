@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO checkin_schedules (user_id, local_time, enabled)\n           VALUES ($1, $2, true)\n           ON CONFLICT (user_id, local_time) DO UPDATE SET enabled = true",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Time"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ea39d33ce053f95b523163e0d5f09c9203d0ebd818a6fcc111eec4685ba5ae0"
+}

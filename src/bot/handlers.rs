@@ -3,6 +3,7 @@ use crate::bot::{
     keyboards,
 };
 use crate::db::{models::EntryType, queries};
+use chrono::NaiveTime;
 use sqlx::PgPool;
 use teloxide::{
     prelude::*,
@@ -16,14 +17,14 @@ const OWNER_ID: i64 = 1069319412;
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "Perintah Kewarasan:")]
 pub enum Command {
-    #[command(description = "daftar & atur jadwal check-in")]
+    #[command(description = "daftar & lihat cara pakai")]
     Start,
     #[command(description = "catat mood sekarang")]
     Waras,
     #[command(description = "seberapa waras kamu minggu ini")]
     Stats,
-    #[command(description = "atur jam check-in harian")]
-    Jadwal,
+    #[command(description = "atur jam check-in (mis. /jadwal 09:00)")]
+    Jadwal(String),
 }
 
 /// Rangkai handler tree (command + callback) lalu jalankan dispatcher.
@@ -44,12 +45,7 @@ pub async fn dispatch(bot: Bot, pool: PgPool) {
         .await;
 }
 
-async fn handle_command(
-    bot: Bot,
-    msg: Message,
-    cmd: Command,
-    pool: PgPool,
-) -> anyhow::Result<()> {
+async fn handle_command(bot: Bot, msg: Message, cmd: Command, pool: PgPool) -> anyhow::Result<()> {
     match cmd {
         Command::Start => {
             // Chat privat: chat.id == telegram user id.
@@ -72,7 +68,8 @@ async fn handle_command(
                  ID kamu: <code>{telegram_id}</code>\n\n\
                  Tugasku simpel: sesekali nanya kabar batinmu, kamu cukup tap emoji. \
                  Nggak usah panjang-panjang — emosi cuma riak, biar aku yang petain arusnya.\n\n\
-                 /waras — kapan pun kamu butuh jujur sama diri sendiri.",
+                 /waras — catat mood kapan aja\n\
+                 /jadwal — atur biar aku yang nyapa duluan",
                 sapaan = html_escape(&sapaan),
             );
             bot.send_message(msg.chat.id, text)
@@ -80,9 +77,12 @@ async fn handle_command(
                 .await?;
         }
         Command::Waras => {
-            bot.send_message(msg.chat.id, "Lagi ngerasa apa sekarang? Jujur aja, nggak ada yang nilai. 👇")
-                .reply_markup(keyboards::mood_keyboard())
-                .await?;
+            bot.send_message(
+                msg.chat.id,
+                "Lagi ngerasa apa sekarang? Jujur aja, nggak ada yang nilai. 👇",
+            )
+            .reply_markup(keyboards::mood_keyboard(false))
+            .await?;
         }
         Command::Stats => {
             bot.send_message(
@@ -91,9 +91,8 @@ async fn handle_command(
             )
             .await?;
         }
-        Command::Jadwal => {
-            bot.send_message(msg.chat.id, "Ngatur jam aku nyapa kamu — segera hadir ⏰")
-                .await?;
+        Command::Jadwal(arg) => {
+            handle_jadwal(&bot, &msg, &pool, &arg).await?;
         }
     }
     Ok(())
@@ -114,22 +113,34 @@ async fn handle_callback(bot: Bot, q: CallbackQuery, pool: PgPool) -> anyhow::Re
     let user_id = queries::ensure_user(&pool, telegram_id).await?.id;
 
     match action {
-        Action::Score(score) => {
+        Action::Score { scheduled, score } => {
             let tags = queries::list_tags(&pool, user_id).await?;
             bot.edit_message_text(chat_id, message_id, "Ada apa di baliknya? (boleh lebih dari satu)")
-                .reply_markup(keyboards::tags_keyboard(score, &[], &tags))
+                .reply_markup(keyboards::tags_keyboard(scheduled, score, &[], &tags))
                 .await?;
         }
-        Action::Toggle { score, tags: sel } => {
+        Action::Toggle {
+            scheduled,
+            score,
+            tags: sel,
+        } => {
             let tags = queries::list_tags(&pool, user_id).await?;
             bot.edit_message_reply_markup(chat_id, message_id)
-                .reply_markup(keyboards::tags_keyboard(score, &sel, &tags))
+                .reply_markup(keyboards::tags_keyboard(scheduled, score, &sel, &tags))
                 .await?;
         }
-        Action::Finalize { score, tags: sel } => {
+        Action::Finalize {
+            scheduled,
+            score,
+            tags: sel,
+        } => {
             let all = queries::list_tags(&pool, user_id).await?;
-            let entry_id =
-                queries::insert_entry(&pool, user_id, score, EntryType::Spontaneous, None).await?;
+            let etype = if scheduled {
+                EntryType::Scheduled
+            } else {
+                EntryType::Spontaneous
+            };
+            let entry_id = queries::insert_entry(&pool, user_id, score, etype, None).await?;
             queries::attach_tags(&pool, entry_id, &sel).await?;
 
             let names: Vec<&str> = all
@@ -140,10 +151,92 @@ async fn handle_callback(bot: Bot, q: CallbackQuery, pool: PgPool) -> anyhow::Re
             bot.edit_message_text(chat_id, message_id, summary_text(score, &names))
                 .await?;
         }
+        Action::Cancel => {
+            bot.edit_message_text(chat_id, message_id, "Oke, nggak jadi. Kapan-kapan aja ya 🌙")
+                .await?;
+        }
     }
 
     bot.answer_callback_query(cq_id).await?;
     Ok(())
+}
+
+/// /jadwal — tanpa arg = lihat daftar; `09:00` = tambah; `hapus 09:00` = hapus.
+async fn handle_jadwal(bot: &Bot, msg: &Message, pool: &PgPool, arg: &str) -> anyhow::Result<()> {
+    let user = queries::ensure_user(pool, msg.chat.id.0).await?;
+    let arg = arg.trim();
+
+    // Lihat daftar.
+    if arg.is_empty() || arg.eq_ignore_ascii_case("list") {
+        let times = queries::list_schedules(pool, user.id).await?;
+        let text = if times.is_empty() {
+            format!(
+                "Belum ada jadwal check-in 🌙\n\n\
+                 Tambah jam: /jadwal 09:00 (boleh beberapa)\n\
+                 Hapus: /jadwal hapus 09:00\n\n\
+                 Zona waktu kamu: {}",
+                user.timezone
+            )
+        } else {
+            let list = times
+                .iter()
+                .map(|t| format!("• {}", t.format("%H:%M")))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!(
+                "Jadwal check-in kamu ({}):\n{list}\n\n\
+                 Tambah: /jadwal 21:00 · Hapus: /jadwal hapus 21:00",
+                user.timezone
+            )
+        };
+        bot.send_message(msg.chat.id, text).await?;
+        return Ok(());
+    }
+
+    // Hapus.
+    if let Some(rest) = arg.strip_prefix("hapus").or_else(|| arg.strip_prefix("off")) {
+        match parse_time(rest.trim()) {
+            Some(t) => {
+                let removed = queries::remove_schedule(pool, user.id, t).await?;
+                let text = if removed {
+                    format!("Oke, jadwal {} dihapus. Aku diam di jam itu ya.", t.format("%H:%M"))
+                } else {
+                    "Nggak nemu jadwal di jam itu.".to_string()
+                };
+                bot.send_message(msg.chat.id, text).await?;
+            }
+            None => {
+                bot.send_message(msg.chat.id, "Format: /jadwal hapus 09:00").await?;
+            }
+        }
+        return Ok(());
+    }
+
+    // Tambah.
+    match parse_time(arg) {
+        Some(t) => {
+            queries::add_schedule(pool, user.id, t).await?;
+            bot.send_message(
+                msg.chat.id,
+                format!(
+                    "Sip 🌙 aku bakal nyapa kamu tiap {} ({}).\n\
+                     Mood dari check-in ini kesimpen sebagai 'terjadwal'.",
+                    t.format("%H:%M"),
+                    user.timezone
+                ),
+            )
+            .await?;
+        }
+        None => {
+            bot.send_message(msg.chat.id, "Format jamnya HH:MM ya, contoh: /jadwal 09:00")
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+fn parse_time(s: &str) -> Option<NaiveTime> {
+    NaiveTime::parse_from_str(s, "%H:%M").ok()
 }
 
 /// Ambil (chat_id, message_id) dari pesan callback, apa pun variannya.
