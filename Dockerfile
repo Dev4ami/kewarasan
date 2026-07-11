@@ -23,7 +23,7 @@ RUN apt-get update && \
 
 COPY --from=builder /usr/local/bin/kewarasan /usr/local/bin/kewarasan
 
-ENV WEB_PORT=3000
-EXPOSE 3000
+ENV WEB_PORT=8775
+EXPOSE 8775
 
 CMD ["kewarasan"]
