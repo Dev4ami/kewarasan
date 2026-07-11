@@ -2,6 +2,7 @@ use crate::bot::{
     callbacks::{self, Action},
     keyboards,
 };
+use crate::config::OWNER_ID;
 use crate::db::{models::EntryType, queries};
 use chrono::{Duration, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
@@ -11,9 +12,6 @@ use teloxide::{
     types::{ChatId, MaybeInaccessibleMessage, MessageId, ParseMode},
     utils::command::BotCommands,
 };
-
-/// Telegram id pemilik bot — dapet sapaan spesial.
-const OWNER_ID: i64 = 1069319412;
 
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "Perintah Kewarasan:")]

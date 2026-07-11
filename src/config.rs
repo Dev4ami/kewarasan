@@ -1,5 +1,9 @@
 use anyhow::{Context, Result};
 
+/// Telegram id pemilik bot — dapet sapaan spesial di bot & jadi user default
+/// dashboard web. Dipakai lintas modul (bot + web) biar magic number-nya tunggal.
+pub const OWNER_ID: i64 = 1069319412;
+
 /// Konfigurasi dari environment variables.
 #[derive(Debug, Clone)]
 pub struct Config {

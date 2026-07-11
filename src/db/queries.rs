@@ -172,6 +172,7 @@ pub async fn list_schedules(pool: &PgPool, user_id: i64) -> anyhow::Result<Vec<N
 // ============================================================
 
 /// Rata-rata mood + jumlah check-in untuk satu hari (lokal user).
+#[derive(serde::Serialize)]
 pub struct DayAgg {
     pub day: NaiveDate,
     pub avg: f64,
@@ -206,6 +207,7 @@ pub async fn weekly_daily(
 }
 
 /// Rata-rata mood per tag dalam satu rentang (tag yang paling sering muncul).
+#[derive(serde::Serialize)]
 pub struct TagAgg {
     pub name: String,
     pub n: i64,
@@ -234,6 +236,123 @@ pub async fn weekly_tags(
            LIMIT 5"#,
         user_id,
         since
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+// ============================================================
+// Dashboard web — agregasi rentang tanggal (owner-scoped, timezone-aware)
+// Batas waktu dikirim sebagai UTC: `created_at >= from AND < to`.
+// ============================================================
+
+/// Lookup user by telegram_id TANPA bikin baru (beda dari [`ensure_user`]).
+/// Dipakai dashboard read-only: user yang belum pernah /start = None.
+pub async fn find_user_by_telegram(
+    pool: &PgPool,
+    telegram_id: i64,
+) -> anyhow::Result<Option<User>> {
+    let user = sqlx::query_as!(
+        User,
+        r#"SELECT id, telegram_id, timezone, created_at
+           FROM users WHERE telegram_id = $1"#,
+        telegram_id
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(user)
+}
+
+/// Trend rata-rata mood per hari (lokal user) dalam rentang [from, to).
+pub async fn trend_range(
+    pool: &PgPool,
+    user_id: i64,
+    tz: &str,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> anyhow::Result<Vec<DayAgg>> {
+    let rows = sqlx::query_as!(
+        DayAgg,
+        r#"SELECT (created_at AT TIME ZONE $2::text)::date AS "day!",
+                  AVG(score)::float8               AS "avg!",
+                  COUNT(*)                         AS "n!"
+           FROM mood_entries
+           WHERE user_id = $1 AND created_at >= $3 AND created_at < $4
+           GROUP BY 1
+           ORDER BY 1"#,
+        user_id,
+        tz,
+        from,
+        to
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Satu sel heatmap: hari-dalam-minggu × jam (lokal user).
+/// `dow`: 0=Minggu … 6=Sabtu (konvensi Postgres EXTRACT(DOW)).
+#[derive(serde::Serialize)]
+pub struct HeatCell {
+    pub dow: i32,
+    pub hour: i32,
+    pub avg: f64,
+    pub n: i64,
+}
+
+/// Heatmap rata-rata mood per (hari-minggu, jam) lokal, dalam rentang [from, to).
+pub async fn heatmap(
+    pool: &PgPool,
+    user_id: i64,
+    tz: &str,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> anyhow::Result<Vec<HeatCell>> {
+    let rows = sqlx::query_as!(
+        HeatCell,
+        r#"SELECT EXTRACT(DOW  FROM created_at AT TIME ZONE $2::text)::int AS "dow!",
+                  EXTRACT(HOUR FROM created_at AT TIME ZONE $2::text)::int AS "hour!",
+                  AVG(score)::float8 AS "avg!",
+                  COUNT(*)           AS "n!"
+           FROM mood_entries
+           WHERE user_id = $1 AND created_at >= $3 AND created_at < $4
+           GROUP BY 1, 2
+           ORDER BY 1, 2"#,
+        user_id,
+        tz,
+        from,
+        to
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Korelasi tag: rata-rata mood per tag dalam rentang [from, to), urut avg turun.
+/// `HAVING COUNT(*) >= 5` — tag minim sampel jangan jadi insight palsu
+/// (aturan CLAUDE.md).
+pub async fn tag_correlation(
+    pool: &PgPool,
+    user_id: i64,
+    from: DateTime<Utc>,
+    to: DateTime<Utc>,
+) -> anyhow::Result<Vec<TagAgg>> {
+    let rows = sqlx::query_as!(
+        TagAgg,
+        r#"SELECT t.name               AS "name!",
+                  COUNT(*)             AS "n!",
+                  AVG(m.score)::float8 AS "avg!"
+           FROM entry_tags et
+           JOIN mood_entries m ON m.id = et.entry_id
+           JOIN tags t         ON t.id = et.tag_id
+           WHERE m.user_id = $1 AND m.created_at >= $2 AND m.created_at < $3
+           GROUP BY t.name
+           HAVING COUNT(*) >= 5
+           ORDER BY AVG(m.score) DESC, COUNT(*) DESC"#,
+        user_id,
+        from,
+        to
     )
     .fetch_all(pool)
     .await?;

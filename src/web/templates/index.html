@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kewarasan · dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root {
+    --bg: #0f1117; --card: #171a23; --line: #262a36;
+    --fg: #e6e8ee; --muted: #8b90a0; --accent: #6ee7b7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 24px 18px 60px; }
+  header h1 { margin: 0 0 2px; font-size: 22px; }
+  header p { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+  .filter {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: end;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 14px; margin-bottom: 22px;
+  }
+  .filter label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  .filter input {
+    background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 9px; font: inherit; color-scheme: dark;
+  }
+  .filter button {
+    background: var(--accent); color: #06251a; border: 0; font-weight: 600;
+    border-radius: 8px; padding: 8px 16px; cursor: pointer; font: inherit;
+  }
+  .filter button:active { transform: translateY(1px); }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 18px; margin-bottom: 20px;
+  }
+  .card h2 { margin: 0 0 2px; font-size: 15px; }
+  .card .sub { margin: 0 0 14px; color: var(--muted); font-size: 12.5px; }
+  .empty { color: var(--muted); font-size: 13px; padding: 18px 0; text-align: center; }
+  canvas { max-height: 280px; }
+
+  /* Heatmap */
+  .heat { display: grid; grid-template-columns: 34px repeat(24, 1fr); gap: 2px; }
+  .heat .hh { font-size: 9px; color: var(--muted); text-align: center; padding-bottom: 2px; }
+  .heat .dl { font-size: 11px; color: var(--muted); display: flex; align-items: center; }
+  .heat .cell { aspect-ratio: 1 / 1; border-radius: 2px; background: rgba(255,255,255,.04); }
+  .legend { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 11px; color: var(--muted); }
+  .legend .bar { flex: 1; height: 8px; border-radius: 4px;
+    background: linear-gradient(90deg, hsl(0,65%,50%), hsl(60,65%,50%), hsl(120,65%,50%)); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🧠 Kewarasan</h1>
+    <p>Emosi itu riak, mood itu arus — ini arusmu.</p>
+  </header>
+
+  <div class="filter">
+    <label>Dari<input type="date" id="from"></label>
+    <label>Sampai<input type="date" id="to"></label>
+    <button id="apply">Terapkan</button>
+  </div>
+
+  <div class="card">
+    <h2>Trend mood harian</h2>
+    <p class="sub">Rata-rata skor tiap hari (1–5).</p>
+    <canvas id="trend"></canvas>
+    <div class="empty" id="trend-empty" hidden>Belum ada data di rentang ini 🫙</div>
+  </div>
+
+  <div class="card">
+    <h2>Korelasi tag</h2>
+    <p class="sub">Rata-rata mood per tag (minimal 5 catatan biar bukan kebetulan).</p>
+    <canvas id="tags"></canvas>
+    <div class="empty" id="tags-empty" hidden>Belum ada tag yang cukup sering buat disimpulin.</div>
+  </div>
+
+  <div class="card">
+    <h2>Heatmap hari × jam</h2>
+    <p class="sub">Kapan kamu paling waras? Kolom = jam (0–23), baris = hari.</p>
+    <div class="heat" id="heat"></div>
+    <div class="empty" id="heat-empty" hidden>Belum ada data di rentang ini 🫙</div>
+    <div class="legend"><span>berat</span><span class="bar"></span><span>waras</span></div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let trendChart, tagChart;
+
+// Skala warna mood 1..5 → merah..hijau (HSL 0..120). null = netral.
+function moodColor(avg, alpha = 1) {
+  if (avg == null) return `rgba(255,255,255,.04)`;
+  const h = Math.max(0, Math.min(120, (avg - 1) / 4 * 120));
+  return `hsla(${h}, 65%, 50%, ${alpha})`;
+}
+
+function iso(d) { return d.toISOString().slice(0, 10); }
+
+function query() {
+  const p = new URLSearchParams();
+  if ($('#from').value) p.set('from', $('#from').value);
+  if ($('#to').value) p.set('to', $('#to').value);
+  const s = p.toString();
+  return s ? '?' + s : '';
+}
+
+async function getJSON(path) {
+  const r = await fetch(path + query());
+  if (!r.ok) throw new Error(`${path} → ${r.status}`);
+  return r.json();
+}
+
+function toggleEmpty(id, isEmpty) { $('#' + id).hidden = !isEmpty; }
+
+function renderTrend(data) {
+  toggleEmpty('trend-empty', data.length === 0);
+  $('#trend').style.display = data.length ? '' : 'none';
+  if (trendChart) trendChart.destroy();
+  if (!data.length) return;
+  trendChart = new Chart($('#trend'), {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.day),
+      datasets: [{
+        data: data.map(d => d.avg),
+        borderColor: '#6ee7b7', backgroundColor: 'rgba(110,231,183,.12)',
+        fill: true, tension: .3, pointRadius: 3, pointBackgroundColor: '#6ee7b7',
+      }],
+    },
+    options: {
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: c => `mood ${c.parsed.y.toFixed(2)}` } } },
+      scales: {
+        y: { min: 1, max: 5, ticks: { stepSize: 1, color: '#8b90a0' }, grid: { color: '#262a36' } },
+        x: { ticks: { color: '#8b90a0', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+function renderTags(data) {
+  toggleEmpty('tags-empty', data.length === 0);
+  $('#tags').style.display = data.length ? '' : 'none';
+  if (tagChart) tagChart.destroy();
+  if (!data.length) return;
+  tagChart = new Chart($('#tags'), {
+    type: 'bar',
+    data: {
+      labels: data.map(t => `${t.name} (${t.n}×)`),
+      datasets: [{
+        data: data.map(t => t.avg),
+        backgroundColor: data.map(t => moodColor(t.avg, .8)),
+        borderRadius: 4,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      plugins: { legend: { display: false },
+        tooltip: { callbacks: { label: c => `rata ${c.parsed.x.toFixed(2)} · ${data[c.dataIndex].n} catatan` } } },
+      scales: {
+        x: { min: 1, max: 5, ticks: { stepSize: 1, color: '#8b90a0' }, grid: { color: '#262a36' } },
+        y: { ticks: { color: '#e6e8ee' }, grid: { display: false } },
+      },
+    },
+  });
+}
+
+// EXTRACT(DOW): 0=Minggu..6=Sabtu. Tampilkan Senin dulu (casual ID).
+const DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
+const DOW_LABEL = { 1: 'Sen', 2: 'Sel', 3: 'Rab', 4: 'Kam', 5: 'Jum', 6: 'Sab', 0: 'Min' };
+
+function renderHeatmap(data) {
+  const grid = $('#heat');
+  toggleEmpty('heat-empty', data.length === 0);
+  grid.style.display = data.length ? '' : 'none';
+  grid.innerHTML = '';
+  if (!data.length) return;
+
+  // Index: cells[dow][hour] = {avg, n}
+  const cells = {};
+  for (const c of data) (cells[c.dow] ??= {})[c.hour] = c;
+
+  // Baris header jam.
+  grid.appendChild(el('div', 'hh', ''));
+  for (let h = 0; h < 24; h++) grid.appendChild(el('div', 'hh', h % 3 === 0 ? h : ''));
+
+  // Baris per hari.
+  for (const dow of DOW_ORDER) {
+    grid.appendChild(el('div', 'dl', DOW_LABEL[dow]));
+    for (let h = 0; h < 24; h++) {
+      const c = cells[dow]?.[h];
+      const cell = el('div', 'cell', '');
+      if (c) {
+        cell.style.background = moodColor(c.avg, .9);
+        cell.title = `${DOW_LABEL[dow]} ${String(h).padStart(2, '0')}:00 — rata ${c.avg.toFixed(2)} (${c.n}×)`;
+      }
+      grid.appendChild(cell);
+    }
+  }
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  e.className = cls; e.textContent = text;
+  return e;
+}
+
+async function load() {
+  try {
+    const [trend, tags, heat] = await Promise.all([
+      getJSON('/api/trend'), getJSON('/api/tags'), getJSON('/api/heatmap'),
+    ]);
+    renderTrend(trend); renderTags(tags); renderHeatmap(heat);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+// Default rentang: 30 hari terakhir (waktu lokal browser).
+(function init() {
+  const today = new Date();
+  const from = new Date(); from.setDate(today.getDate() - 29);
+  $('#to').value = iso(today);
+  $('#from').value = iso(from);
+  $('#apply').addEventListener('click', load);
+  load();
+})();
+</script>
+</body>
+</html>
