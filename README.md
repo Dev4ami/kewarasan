@@ -105,7 +105,6 @@ Nyatat harus lebih cepat dari mikir. Analisis biar mesin yang kerjakan.
 - [x] Web dashboard: trend, heatmap, korelasi tag
 - [x] Dashboard mobile + PWA + login opsional
 - [x] Deploy Docker/Coolify — **live di home server** 🟢
-- [ ] Tracking jam tidur
 
 ## License
 
