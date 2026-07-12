@@ -231,6 +231,16 @@ async fn handle_stats(bot: &Bot, msg: &Message, pool: &PgPool) -> anyhow::Result
         }
     }
 
+    // Insight rule-based: bot nyimpulin pola dari angka yang sama, kalau ada.
+    let insight = stats_insight(avg, total_n, daily.len(), &tags);
+    if !insight.is_empty() {
+        text.push_str("\n\n💡 <b>Yang kebaca:</b>");
+        for line in &insight {
+            text.push('\n');
+            text.push_str(line);
+        }
+    }
+
     bot.send_message(msg.chat.id, text)
         .parse_mode(ParseMode::Html)
         .await?;
@@ -242,6 +252,64 @@ fn bar(avg: f64) -> char {
     const BARS: [char; 5] = ['▁', '▂', '▄', '▅', '▇'];
     let idx = (avg.round() as i64).clamp(1, 5) - 1;
     BARS[idx as usize]
+}
+
+/// Insight rule-based buat /stats — nyimpulin pola dari agregat 7 hari yang
+/// SUDAH dihitung (nol query tambahan, nol AI). Sengaja pelit: maksimal 2 baris,
+/// dan cuma muncul kalau sinyalnya cukup kuat — biar bukan bot cerewet.
+///
+/// `weekly_avg` = rata mingguan, `present_days` = jumlah hari yang ada entry
+/// (dari 7). Ambang: tag harus muncul ≥3× dan selisih ≥0.5 poin dari rata biar
+/// nggak jadi insight palsu dari sampel kecil.
+fn stats_insight(
+    weekly_avg: f64,
+    total_n: i64,
+    present_days: usize,
+    tags: &[queries::TagAgg],
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+
+    // Tag yang nyeret mood ke bawah (paling rendah, minimal 0.5 di bawah rata).
+    if let Some(drag) = tags
+        .iter()
+        .filter(|t| t.n >= 3 && weekly_avg - t.avg >= 0.5)
+        .min_by(|a, b| a.avg.partial_cmp(&b.avg).unwrap_or(std::cmp::Ordering::Equal))
+    {
+        out.push(format!(
+            "🔻 Pas ada <code>{}</code>, mood kamu rata {:.1} — {:.1} di bawah rata minggu ini.",
+            html_escape(&drag.name),
+            drag.avg,
+            weekly_avg - drag.avg,
+        ));
+    }
+
+    // Tag yang ngangkat mood (kriteria cermin; drag & lift nggak mungkin tag sama).
+    if let Some(lift) = tags
+        .iter()
+        .filter(|t| t.n >= 3 && t.avg - weekly_avg >= 0.5)
+        .max_by(|a, b| a.avg.partial_cmp(&b.avg).unwrap_or(std::cmp::Ordering::Equal))
+    {
+        out.push(format!(
+            "🔆 <code>{}</code> kayaknya ngangkat — rata {:.1}, di atas minggu ini.",
+            html_escape(&lift.name),
+            lift.avg,
+        ));
+    }
+
+    // Belum ada sinyal tag yang kuat → nudge sesuai kondisi data.
+    if out.is_empty() {
+        if total_n < 7 || present_days <= 3 {
+            out.push(
+                "Datanya masih tipis minggu ini — makin sering catat, makin kebaca arusnya 📈"
+                    .to_string(),
+            );
+        } else if weekly_avg >= 4.0 {
+            out.push("Minggu yang lumayan waras ✨ Pertahanin ya.".to_string());
+        }
+    }
+
+    out.truncate(2);
+    out
 }
 
 /// /jadwal — tanpa arg = lihat daftar; `09:00` = tambah; `hapus 09:00` = hapus.
