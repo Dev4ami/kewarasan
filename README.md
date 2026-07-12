@@ -33,7 +33,8 @@ Emosi itu riak. Mood itu arusnya. Kewarasan nggak peduli sama riak — dia memet
 - ⚡ **Input spontan** — ada kejadian? `/waras`, catat, lanjut hidup.
 - 🏷 **Tags konteks** — `coding`, `capek`, `kurang tidur`, `olahraga`, atau bikin sendiri.
 - 📊 **Statistik di chat** — `/stats` buat lihat trend mingguan langsung di Telegram.
-- 📈 **Web dashboard** — trend line, heatmap hari × jam, dan korelasi tag. Data ngomong sendiri.
+- 📈 **Web dashboard** — trend line, heatmap hari × jam, dan korelasi tag. Responsif di HP, bisa di-*Add to Home Screen* (PWA).
+- 🔐 **Login opsional** — dashboard bisa dikunci password (cookie session) kalau diekspos ke internet.
 - 🔒 **Self-hosted** — data mood-mu tinggal di server-mu. Kewarasan itu privasi.
 
 ## Cara pakai
@@ -77,7 +78,18 @@ Dashboard tersedia di `http://localhost:3000`. Bot langsung jalan via long polli
 |---|---|
 | `DATABASE_URL` | `postgres://user:pass@localhost/kewarasan` |
 | `TELOXIDE_TOKEN` | Token dari [@BotFather](https://t.me/BotFather) |
-| `WEB_PORT` | Port dashboard (default: `3000`) |
+| `WEB_PORT` | Port dashboard (default: `3000`, image Docker: `8775`) |
+| `DASHBOARD_PASSWORD` | Opsional — set = dashboard butuh login. Kosong = terbuka (dev lokal) |
+| `DASHBOARD_USER` | Opsional — username login (default: `kewarasan`) |
+
+### Deploy via Docker / Coolify
+
+```bash
+docker build -t kewarasan .
+docker run -d --env-file .env -p 8775:8775 kewarasan
+```
+
+Ada `Dockerfile` multi-stage (build sqlx offline, runtime `debian-slim`). Di [Coolify](https://coolify.io/) tinggal `git push` → rebuild container. Bot ini sudah live jalan begini di home server. 🟢
 
 ## Filosofi
 
@@ -88,9 +100,11 @@ Nyatat harus lebih cepat dari mikir. Analisis biar mesin yang kerjakan.
 ## Roadmap
 
 - [x] Desain schema & arsitektur
-- [ ] Bot core: check-in, tags, `/stats`
-- [ ] Scheduler check-in harian (timezone-aware)
-- [ ] Web dashboard: trend, heatmap, korelasi tag
+- [x] Bot core: check-in, tags, `/stats`
+- [x] Scheduler check-in harian (timezone-aware)
+- [x] Web dashboard: trend, heatmap, korelasi tag
+- [x] Dashboard mobile + PWA + login opsional
+- [x] Deploy Docker/Coolify — **live di home server** 🟢
 - [ ] Ekspor data (CSV)
 - [ ] Tracking jam tidur
 
